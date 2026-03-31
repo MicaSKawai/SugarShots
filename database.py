@@ -1,5 +1,5 @@
 import os
-import libsql_experimental as libsql
+import libsql_client as libsql
 from datetime import datetime
 
 TURSO_URL   = os.getenv("TURSO_DATABASE_URL")
@@ -10,8 +10,8 @@ class Database:
         self.conn = None
 
     async def init(self):
-        self.conn = libsql.connect(
-            database=TURSO_URL,
+        self.conn = libsql.create_client_sync(
+            url=TURSO_URL,
             auth_token=TURSO_TOKEN
         )
         await self._create_tables()
@@ -123,3 +123,12 @@ class Database:
             [clave, valor]
         )
         self.conn.commit()
+```
+
+---
+
+Y el **`requirements.txt`**:
+```
+discord.py>=2.3.2
+libsql-client>=0.3.0
+flask>=3.0.0
