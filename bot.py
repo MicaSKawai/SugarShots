@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import os
+import asyncio
 from datetime import datetime
 from database import Database
 
@@ -45,6 +46,7 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 db: Database = None
 _panels_initialized = False
+_db_ready = False  # Flag: DB lista para usar
 
 def has_permission(member):
     return any(r.name in ALLOWED_ROLES for r in member.roles)
@@ -214,6 +216,8 @@ class PanelEgreso(discord.ui.View):
     async def btn_egr(self, interaction, button):
         if not has_permission(interaction.user):
             return await interaction.response.send_message("❌ Sin permisos.", ephemeral=True)
+        if not _db_ready:
+            return await interaction.response.send_message("⏳ El bot todavía está iniciando, intentá en unos segundos.", ephemeral=True)
         inv = await db.get_inventario_con_stock()
         if not inv:
             return await interaction.response.send_message("⚠️ Inventario vacío.", ephemeral=True)
@@ -262,6 +266,8 @@ def build_embed(inventario, movs):
 @tasks.loop(seconds=30)
 async def actualizar_dashboard():
     global dashboard_message_id
+    if not _db_ready:
+        return
     guild = bot.get_guild(GUILD_ID)
     if not guild: return
     ch = guild.get_channel(CHANNEL_ARMERIA)
@@ -367,20 +373,18 @@ async def setup_panels(guild):
         await ch.send(embed=embed, view=PanelEgreso())
 
     _panels_initialized = True
+    print("✅ Paneles configurados")
 
 
-# ── on_ready ──────────────────────────────────────────────────────────────────
-@bot.event
-async def on_ready():
-    global db, dashboard_message_id, _panels_initialized
-    print(f"✅ Bot conectado como {bot.user}")
-    print(f"🔍 GUILD_ID: {GUILD_ID}")
-    print(f"🔍 TOKEN presente: {'SI' if TOKEN else 'NO'}")
+# ── Inicialización en background (no bloquea las interacciones) ───────────────
+async def startup():
+    global db, dashboard_message_id, _panels_initialized, _db_ready
 
+    print("🔄 Iniciando base de datos...")
     try:
-        if db is None:
-            db = Database()
-            await db.init()
+        db = Database()
+        await db.init()
+        _db_ready = True
     except Exception as e:
         print(f"❌ FATAL — No se pudo conectar a la DB: {e}")
         return
@@ -400,15 +404,11 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Error sincronizando slash commands: {e}")
 
-    bot.add_view(PanelIngreso())
-    bot.add_view(PanelEgreso())
-
     if not _panels_initialized:
         try:
             real_guild = bot.get_guild(GUILD_ID)
             if real_guild:
                 await setup_panels(real_guild)
-                print("✅ Paneles configurados")
             else:
                 print(f"⚠️ No se encontró el guild con ID {GUILD_ID}")
         except Exception as e:
@@ -417,6 +417,17 @@ async def on_ready():
     if not actualizar_dashboard.is_running():
         actualizar_dashboard.start()
         print("✅ Dashboard iniciado")
+
+
+# ── on_ready ──────────────────────────────────────────────────────────────────
+@bot.event
+async def on_ready():
+    print(f"✅ Bot conectado como {bot.user}")
+    # Registrar views persistentes PRIMERO (para que los botones respondan de inmediato)
+    bot.add_view(PanelIngreso())
+    bot.add_view(PanelEgreso())
+    # Lanzar todo lo demás en background sin bloquear
+    asyncio.create_task(startup())
 
 
 bot.run(TOKEN)
