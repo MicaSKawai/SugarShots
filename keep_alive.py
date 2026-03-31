@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "🔫 Armería Bot — Online", 200
+    return "Armeria Bot Online", 200
 
 @app.route("/health")
 def health():
@@ -18,12 +18,3 @@ def keep_alive():
     t = Thread(target=run)
     t.daemon = True
     t.start()
-```
-
----
-
-**`requirements.txt`**
-```
-discord.py>=2.3.2
-libsql-experimental>=0.0.37
-flask>=3.0.0
