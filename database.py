@@ -44,7 +44,18 @@ class Database:
         if self.session:
             await self.session.close()
 
-    async def _execute(self, statements: list[dict]) -> list:
+    def _encode_arg(self, a):
+        if a is None:
+            return {"type": "null"}
+        if isinstance(a, bool):
+            return {"type": "integer", "value": str(int(a))}
+        if isinstance(a, int):
+            return {"type": "integer", "value": str(a)}
+        if isinstance(a, float):
+            return {"type": "float", "value": str(a)}
+        return {"type": "text", "value": str(a)}
+
+    async def _execute(self, statements: list) -> list:
         payload = {"requests": statements}
         try:
             async with self.session.post(self.base_url, json=payload, headers=self.headers) as resp:
@@ -58,11 +69,11 @@ class Database:
             print(f"❌ Error en _execute: {e}")
             raise
 
-    async def _query(self, sql: str, args: list = None) -> list[dict]:
+    async def _query(self, sql: str, args: list = None) -> list:
         stmt = {
             "sql": sql,
             "named_args": [],
-            "positional_args": [str(a) if a is not None else None for a in (args or [])]
+            "positional_args": [self._encode_arg(a) for a in (args or [])]
         }
         results = await self._execute([{"type": "execute", "stmt": stmt}])
         result = results[0]
@@ -82,7 +93,7 @@ class Database:
         stmt = {
             "sql": sql,
             "named_args": [],
-            "positional_args": [str(a) if a is not None else None for a in (args or [])]
+            "positional_args": [self._encode_arg(a) for a in (args or [])]
         }
         results = await self._execute([{"type": "execute", "stmt": stmt}])
         result = results[0]
@@ -140,19 +151,19 @@ class Database:
             [cantidad, nombre]
         )
 
-    async def get_item(self, nombre: str) -> dict | None:
+    async def get_item(self, nombre: str):
         rows = await self._query(
             "SELECT nombre, categoria, cantidad FROM inventario WHERE nombre = ?",
             [nombre]
         )
         return rows[0] if rows else None
 
-    async def get_inventario_completo(self) -> list[dict]:
+    async def get_inventario_completo(self):
         return await self._query(
             "SELECT nombre, categoria, cantidad FROM inventario"
         )
 
-    async def get_inventario_con_stock(self) -> list[dict]:
+    async def get_inventario_con_stock(self):
         return await self._query(
             "SELECT nombre, categoria, cantidad FROM inventario WHERE cantidad > 0 ORDER BY categoria, nombre"
         )
@@ -165,13 +176,13 @@ class Database:
             [tipo, item, categoria, cantidad, usuario, usuario_id, motivo, fecha]
         )
 
-    async def get_historial(self, limit: int = 10) -> list[dict]:
+    async def get_historial(self, limit: int = 10):
         return await self._query(
             "SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT ?",
             [limit]
         )
 
-    async def get_config(self, clave: str) -> str | None:
+    async def get_config(self, clave: str):
         rows = await self._query(
             "SELECT valor FROM config WHERE clave = ?", [clave]
         )
