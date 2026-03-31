@@ -21,8 +21,15 @@ class Database:
 
     async def init(self):
         self.session = aiohttp.ClientSession()
-        await self._create_tables()
-        print("✅ Base de datos conectada (Turso HTTP)")
+        print(f"🔍 Conectando a Turso: {self.base_url}")
+        print(f"🔍 Token presente: {'SI' if TURSO_TOKEN else 'NO — falta TURSO_AUTH_TOKEN'}")
+        print(f"🔍 URL presente:   {'SI' if TURSO_URL else 'NO — falta TURSO_DATABASE_URL'}")
+        try:
+            await self._create_tables()
+            print("✅ Base de datos conectada (Turso HTTP)")
+        except Exception as e:
+            print(f"❌ Error conectando a la DB: {e}")
+            raise
 
     async def close(self):
         if self.session:
@@ -31,25 +38,29 @@ class Database:
     # ── Ejecución de queries ──────────────────────────────────────────────────
 
     async def _execute(self, statements: list[dict]) -> list:
-        """
-        Envía una lista de statements al endpoint /v2/pipeline de Turso.
-        Cada statement: {"type": "execute", "stmt": {"sql": "...", "args": [...]}}
-        Retorna la lista de resultados.
-        """
         payload = {"requests": statements}
-        async with self.session.post(self.base_url, json=payload, headers=self.headers) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"Turso HTTP error {resp.status}: {text}")
-            data = await resp.json()
-            return data.get("results", [])
+        try:
+            async with self.session.post(self.base_url, json=payload, headers=self.headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    print(f"❌ Turso HTTP {resp.status}: {text}")
+                    raise Exception(f"Turso HTTP error {resp.status}: {text}")
+                data = await resp.json()
+                return data.get("results", [])
+        except Exception as e:
+            print(f"❌ Error en _execute: {e}")
+            raise
 
     async def _query(self, sql: str, args: list = None) -> list[dict]:
-        """Ejecuta un SELECT y devuelve lista de dicts."""
-        stmt = {"sql": sql, "named_args": [], "positional_args": [str(a) if a is not None else None for a in (args or [])]}
+        stmt = {
+            "sql": sql,
+            "named_args": [],
+            "positional_args": [str(a) if a is not None else None for a in (args or [])]
+        }
         results = await self._execute([{"type": "execute", "stmt": stmt}])
         result = results[0]
         if result.get("type") == "error":
+            print(f"❌ Query error: {result}")
             raise Exception(f"Query error: {result}")
         rows_data = result.get("response", {}).get("result", {})
         cols = [c["name"] for c in rows_data.get("cols", [])]
@@ -61,11 +72,15 @@ class Database:
         ]
 
     async def _run(self, sql: str, args: list = None):
-        """Ejecuta INSERT/UPDATE/DELETE/CREATE."""
-        stmt = {"sql": sql, "named_args": [], "positional_args": [str(a) if a is not None else None for a in (args or [])]}
+        stmt = {
+            "sql": sql,
+            "named_args": [],
+            "positional_args": [str(a) if a is not None else None for a in (args or [])]
+        }
         results = await self._execute([{"type": "execute", "stmt": stmt}])
         result = results[0]
         if result.get("type") == "error":
+            print(f"❌ Run error: {result}")
             raise Exception(f"Run error: {result}")
 
     # ── Tablas ────────────────────────────────────────────────────────────────
