@@ -11,11 +11,20 @@ class Database:
         self.base_url = None
         self.headers = None
 
+    def _arg(self, v):
+        if v is None:
+            return {"type": "null", "value": None}
+        if isinstance(v, bool):
+            return {"type": "integer", "value": str(int(v))}
+        if isinstance(v, int):
+            return {"type": "integer", "value": str(v)}
+        if isinstance(v, float):
+            return {"type": "float", "value": str(v)}
+        return {"type": "text", "value": str(v)}
+
     async def init(self):
-        print(f"🔍 TURSO_DATABASE_URL: {TURSO_URL}", flush=True)
-        print(f"🔍 TURSO_AUTH_TOKEN presente: {'SI' if TURSO_TOKEN else 'NO'}", flush=True)
         if not TURSO_URL or not TURSO_TOKEN:
-            raise Exception("Faltan variables de entorno de Turso")
+            raise Exception("Faltan variables TURSO_DATABASE_URL o TURSO_AUTH_TOKEN")
         self.base_url = TURSO_URL.rstrip("/") + "/v2/pipeline"
         self.headers = {
             "Authorization": f"Bearer {TURSO_TOKEN}",
@@ -39,10 +48,18 @@ class Database:
             return data.get("results", [])
 
     async def _query(self, sql, args=None):
-        statements = [{"type": "execute", "stmt": {"sql": sql, "args": args or []}}]
-        results = await self._execute(statements)
+        stmt = {
+            "type": "execute",
+            "stmt": {
+                "sql": sql,
+                "named_args": [],
+                "positional_args": [self._arg(a) for a in (args or [])]
+            }
+        }
+        results = await self._execute([stmt])
         result = results[0]
         if result.get("type") == "error":
+            print(f"❌ Query error: {result}", flush=True)
             raise Exception(f"Query error: {result}")
         rows_data = result.get("response", {}).get("result", {})
         cols = [c["name"] for c in rows_data.get("cols", [])]
@@ -54,10 +71,18 @@ class Database:
         ]
 
     async def _run(self, sql, args=None):
-        statements = [{"type": "execute", "stmt": {"sql": sql, "args": args or []}}]
-        results = await self._execute(statements)
+        stmt = {
+            "type": "execute",
+            "stmt": {
+                "sql": sql,
+                "named_args": [],
+                "positional_args": [self._arg(a) for a in (args or [])]
+            }
+        }
+        results = await self._execute([stmt])
         result = results[0]
         if result.get("type") == "error":
+            print(f"❌ Run error: {result}", flush=True)
             raise Exception(f"Run error: {result}")
 
     async def _create_tables(self):
@@ -93,7 +118,10 @@ class Database:
         )
 
     async def get_historial(self, limit=10):
-        return await self._query("SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT ?", [limit])
+        return await self._query(
+            "SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT ?",
+            [limit]
+        )
 
     async def get_config(self, clave):
         rows = await self._query("SELECT valor FROM config WHERE clave = ?", [clave])
