@@ -6,24 +6,35 @@ import os
 import aiohttp
 from datetime import datetime
 
-TURSO_URL   = os.getenv("TURSO_DATABASE_URL")   # https://xxx.turso.io
+TURSO_URL   = os.getenv("TURSO_DATABASE_URL")
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 
 
 class Database:
     def __init__(self):
         self.session: aiohttp.ClientSession = None
+        self.base_url = None
+        self.headers = None
+
+    async def init(self):
+        # Validar variables de entorno ANTES de cualquier otra cosa
+        print(f"🔍 TURSO_DATABASE_URL presente: {'SI -> ' + TURSO_URL if TURSO_URL else 'NO ❌'}")
+        print(f"🔍 TURSO_AUTH_TOKEN presente:   {'SI' if TURSO_TOKEN else 'NO ❌'}")
+
+        if not TURSO_URL:
+            raise Exception("Falta la variable de entorno TURSO_DATABASE_URL")
+        if not TURSO_TOKEN:
+            raise Exception("Falta la variable de entorno TURSO_AUTH_TOKEN")
+
         self.base_url = TURSO_URL.rstrip("/") + "/v2/pipeline"
         self.headers = {
             "Authorization": f"Bearer {TURSO_TOKEN}",
             "Content-Type": "application/json",
         }
 
-    async def init(self):
         self.session = aiohttp.ClientSession()
-        print(f"🔍 Conectando a Turso: {self.base_url}")
-        print(f"🔍 Token presente: {'SI' if TURSO_TOKEN else 'NO — falta TURSO_AUTH_TOKEN'}")
-        print(f"🔍 URL presente:   {'SI' if TURSO_URL else 'NO — falta TURSO_DATABASE_URL'}")
+        print(f"🔍 Conectando a: {self.base_url}")
+
         try:
             await self._create_tables()
             print("✅ Base de datos conectada (Turso HTTP)")
