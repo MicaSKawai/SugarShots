@@ -8,7 +8,6 @@ import os
 from datetime import datetime
 from database import Database
 
-# keep_alive VA después de los imports
 from keep_alive import keep_alive
 keep_alive()
 
@@ -45,8 +44,6 @@ intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 db: Database = None
-
-# Flag para evitar re-setup en reconexiones
 _panels_initialized = False
 
 def has_permission(member):
@@ -80,10 +77,14 @@ class ModalIngreso(discord.ui.Modal):
             assert cant > 0
         except:
             return await interaction.response.send_message("❌ Cantidad inválida.", ephemeral=True)
-        await db.add_item(self.item, self.categoria, cant)
-        await db.log_movimiento("ingreso", self.item, self.categoria, cant,
-                                str(interaction.user), interaction.user.id,
-                                self.notas.value or "—")
+        try:
+            await db.add_item(self.item, self.categoria, cant)
+            await db.log_movimiento("ingreso", self.item, self.categoria, cant,
+                                    str(interaction.user), interaction.user.id,
+                                    self.notas.value or "—")
+        except Exception as e:
+            print(f"❌ Error en ingreso DB: {e}")
+            return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
         embed = discord.Embed(title="✅ Ingreso Registrado", color=0x2ECC71)
         embed.add_field(name="Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
         embed.add_field(name="Cantidad", value=f"+{cant}",                               inline=True)
@@ -119,9 +120,13 @@ class ModalEgreso(discord.ui.Modal):
             return await interaction.response.send_message(
                 f"❌ Stock insuficiente. Hay **{self.stock_actual}** unidades.", ephemeral=True)
         cat = categoria_de_item(self.item)
-        await db.remove_item(self.item, cant)
-        await db.log_movimiento("egreso", self.item, cat, cant,
-                                str(interaction.user), interaction.user.id, self.motivo.value)
+        try:
+            await db.remove_item(self.item, cant)
+            await db.log_movimiento("egreso", self.item, cat, cant,
+                                    str(interaction.user), interaction.user.id, self.motivo.value)
+        except Exception as e:
+            print(f"❌ Error en egreso DB: {e}")
+            return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
         embed = discord.Embed(title="📤 Egreso Registrado", color=0xE74C3C)
         embed.add_field(name="Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
         embed.add_field(name="Cantidad", value=f"-{cant}",                               inline=True)
@@ -254,7 +259,7 @@ def build_embed(inventario, movs):
     embed.timestamp = datetime.utcnow()
     return embed
 
-@tasks.loop(seconds=30)  # 30s es suficiente, 10s es muy agresivo para Turso free tier
+@tasks.loop(seconds=30)
 async def actualizar_dashboard():
     global dashboard_message_id
     guild = bot.get_guild(GUILD_ID)
@@ -369,34 +374,46 @@ async def setup_panels(guild):
 async def on_ready():
     global db, dashboard_message_id, _panels_initialized
     print(f"✅ Bot conectado como {bot.user}")
+    print(f"🔍 GUILD_ID: {GUILD_ID}")
+    print(f"🔍 TOKEN presente: {'SI' if TOKEN else 'NO'}")
 
-    # Inicializar DB solo si no existe
-    if db is None:
-        db = Database()
-        await db.init()
+    try:
+        if db is None:
+            db = Database()
+            await db.init()
+    except Exception as e:
+        print(f"❌ FATAL — No se pudo conectar a la DB: {e}")
+        return
 
-    # Recuperar dashboard ID guardado
-    saved = await db.get_config("dashboard_message_id")
-    if saved:
-        dashboard_message_id = int(saved)
+    try:
+        saved = await db.get_config("dashboard_message_id")
+        if saved:
+            dashboard_message_id = int(saved)
+    except Exception as e:
+        print(f"⚠️ No se pudo recuperar dashboard_message_id: {e}")
 
-    # Sincronizar slash commands al guild
-    guild_obj = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild_obj)
-    await bot.tree.sync(guild=guild_obj)
-    print("✅ Slash commands sincronizados")
+    try:
+        guild_obj = discord.Object(id=GUILD_ID)
+        bot.tree.copy_global_to(guild=guild_obj)
+        await bot.tree.sync(guild=guild_obj)
+        print("✅ Slash commands sincronizados")
+    except Exception as e:
+        print(f"❌ Error sincronizando slash commands: {e}")
 
-    # Registrar views persistentes (para botones que sobreviven reinicios)
     bot.add_view(PanelIngreso())
     bot.add_view(PanelEgreso())
 
-    # Setup de paneles solo en el primer arranque
     if not _panels_initialized:
-        real_guild = bot.get_guild(GUILD_ID)
-        if real_guild:
-            await setup_panels(real_guild)
+        try:
+            real_guild = bot.get_guild(GUILD_ID)
+            if real_guild:
+                await setup_panels(real_guild)
+                print("✅ Paneles configurados")
+            else:
+                print(f"⚠️ No se encontró el guild con ID {GUILD_ID}")
+        except Exception as e:
+            print(f"❌ Error configurando paneles: {e}")
 
-    # Iniciar dashboard loop
     if not actualizar_dashboard.is_running():
         actualizar_dashboard.start()
         print("✅ Dashboard iniciado")
