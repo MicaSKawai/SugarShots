@@ -11,17 +11,6 @@ class Database:
         self.base_url = None
         self.headers = None
 
-    def _arg(self, v):
-        if v is None:
-            return {"type": "null", "value": None}
-        if isinstance(v, bool):
-            return {"type": "integer", "value": str(int(v))}
-        if isinstance(v, int):
-            return {"type": "integer", "value": str(v)}
-        if isinstance(v, float):
-            return {"type": "float", "value": str(v)}
-        return {"type": "text", "value": str(v)}
-
     async def init(self):
         if not TURSO_URL or not TURSO_TOKEN:
             raise Exception("Faltan variables TURSO_DATABASE_URL o TURSO_AUTH_TOKEN")
@@ -47,13 +36,23 @@ class Database:
             data = await resp.json()
             return data.get("results", [])
 
+    def _val(self, v):
+        if v is None:
+            return {"type": "null"}
+        if isinstance(v, bool):
+            return {"type": "integer", "value": int(v)}
+        if isinstance(v, int):
+            return {"type": "integer", "value": v}
+        if isinstance(v, float):
+            return {"type": "float", "value": v}
+        return {"type": "text", "value": str(v)}
+
     async def _query(self, sql, args=None):
         stmt = {
             "type": "execute",
             "stmt": {
                 "sql": sql,
-                "named_args": [],
-                "positional_args": [self._arg(a) for a in (args or [])]
+                "positional_args": [self._val(a) for a in (args or [])]
             }
         }
         results = await self._execute([stmt])
@@ -75,8 +74,7 @@ class Database:
             "type": "execute",
             "stmt": {
                 "sql": sql,
-                "named_args": [],
-                "positional_args": [self._arg(a) for a in (args or [])]
+                "positional_args": [self._val(a) for a in (args or [])]
             }
         }
         results = await self._execute([stmt])
