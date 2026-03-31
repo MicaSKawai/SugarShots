@@ -1,15 +1,16 @@
 """
 Armería Bot — Discord
 """
-from keep_alive import keep_alive
-keep_alive()
-
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import os
 from datetime import datetime
 from database import Database
+
+# keep_alive VA después de los imports
+from keep_alive import keep_alive
+keep_alive()
 
 TOKEN    = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
@@ -44,6 +45,9 @@ intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 db: Database = None
+
+# Flag para evitar re-setup en reconexiones
+_panels_initialized = False
 
 def has_permission(member):
     return any(r.name in ALLOWED_ROLES for r in member.roles)
@@ -250,28 +254,31 @@ def build_embed(inventario, movs):
     embed.timestamp = datetime.utcnow()
     return embed
 
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=30)  # 30s es suficiente, 10s es muy agresivo para Turso free tier
 async def actualizar_dashboard():
     global dashboard_message_id
     guild = bot.get_guild(GUILD_ID)
     if not guild: return
     ch = guild.get_channel(CHANNEL_ARMERIA)
     if not ch: return
-    raw = await db.get_inventario_completo()
-    inv = {r["nombre"]: r["cantidad"] for r in raw}
-    movs = await db.get_historial(5)
-    embed = build_embed(inv, movs)
-    if dashboard_message_id:
-        try:
-            msg = await ch.fetch_message(dashboard_message_id)
-            await msg.edit(embed=embed)
-            return
-        except discord.NotFound:
-            dashboard_message_id = None
-    await ch.purge(limit=10)
-    msg = await ch.send(embed=embed)
-    dashboard_message_id = msg.id
-    await db.set_config("dashboard_message_id", str(msg.id))
+    try:
+        raw = await db.get_inventario_completo()
+        inv = {r["nombre"]: r["cantidad"] for r in raw}
+        movs = await db.get_historial(5)
+        embed = build_embed(inv, movs)
+        if dashboard_message_id:
+            try:
+                msg = await ch.fetch_message(dashboard_message_id)
+                await msg.edit(embed=embed)
+                return
+            except discord.NotFound:
+                dashboard_message_id = None
+        await ch.purge(limit=10)
+        msg = await ch.send(embed=embed)
+        dashboard_message_id = msg.id
+        await db.set_config("dashboard_message_id", str(msg.id))
+    except Exception as e:
+        print(f"⚠️ Error actualizando dashboard: {e}")
 
 
 # ── Slash commands ────────────────────────────────────────────────────────────
@@ -313,12 +320,15 @@ async def cmd_reset(interaction):
     if not any(r.name in ["Admin","admin"] for r in interaction.user.roles):
         return await interaction.response.send_message("❌ Solo admins.", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
+    global _panels_initialized
+    _panels_initialized = False
     await setup_panels(interaction.guild)
     await interaction.followup.send("✅ Paneles reseteados.", ephemeral=True)
 
 
 # ── Setup de paneles ──────────────────────────────────────────────────────────
 async def setup_panels(guild):
+    global _panels_initialized
     ch = guild.get_channel(CHANNEL_INGRESO)
     if ch:
         await ch.purge(limit=10)
@@ -351,28 +361,45 @@ async def setup_panels(guild):
         embed.set_footer(text="Sistema de Armería • Panel de Egreso")
         await ch.send(embed=embed, view=PanelEgreso())
 
+    _panels_initialized = True
+
 
 # ── on_ready ──────────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
-    global db, dashboard_message_id
+    global db, dashboard_message_id, _panels_initialized
     print(f"✅ Bot conectado como {bot.user}")
-    db = Database()
-    await db.init()
+
+    # Inicializar DB solo si no existe
+    if db is None:
+        db = Database()
+        await db.init()
+
+    # Recuperar dashboard ID guardado
     saved = await db.get_config("dashboard_message_id")
     if saved:
         dashboard_message_id = int(saved)
+
+    # Sincronizar slash commands al guild
     guild_obj = discord.Object(id=GUILD_ID)
     bot.tree.copy_global_to(guild=guild_obj)
     await bot.tree.sync(guild=guild_obj)
     print("✅ Slash commands sincronizados")
+
+    # Registrar views persistentes (para botones que sobreviven reinicios)
     bot.add_view(PanelIngreso())
     bot.add_view(PanelEgreso())
-    real_guild = bot.get_guild(GUILD_ID)
-    if real_guild:
-        await setup_panels(real_guild)
-    actualizar_dashboard.start()
-    print("✅ Dashboard iniciado")
+
+    # Setup de paneles solo en el primer arranque
+    if not _panels_initialized:
+        real_guild = bot.get_guild(GUILD_ID)
+        if real_guild:
+            await setup_panels(real_guild)
+
+    # Iniciar dashboard loop
+    if not actualizar_dashboard.is_running():
+        actualizar_dashboard.start()
+        print("✅ Dashboard iniciado")
 
 
 bot.run(TOKEN)
