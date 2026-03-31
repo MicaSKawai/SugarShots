@@ -123,12 +123,3 @@ class Database:
             [clave, valor]
         )
         self.conn.commit()
-```
-
----
-
-Y el **`requirements.txt`**:
-```
-discord.py>=2.3.2
-libsql-client>=0.3.0
-flask>=3.0.0
