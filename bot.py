@@ -1,6 +1,9 @@
 """
 Armería Bot — Discord
 """
+import sys
+sys.stdout.reconfigure(line_buffering=True)  # Fuerza prints en tiempo real en Render
+
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -46,7 +49,7 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 db: Database = None
 _panels_initialized = False
-_db_ready = False  # Flag: DB lista para usar
+_db_ready = False
 
 def has_permission(member):
     return any(r.name in ALLOWED_ROLES for r in member.roles)
@@ -85,7 +88,7 @@ class ModalIngreso(discord.ui.Modal):
                                     str(interaction.user), interaction.user.id,
                                     self.notas.value or "—")
         except Exception as e:
-            print(f"❌ Error en ingreso DB: {e}")
+            print(f"❌ Error en ingreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
         embed = discord.Embed(title="✅ Ingreso Registrado", color=0x2ECC71)
         embed.add_field(name="Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
@@ -127,7 +130,7 @@ class ModalEgreso(discord.ui.Modal):
             await db.log_movimiento("egreso", self.item, cat, cant,
                                     str(interaction.user), interaction.user.id, self.motivo.value)
         except Exception as e:
-            print(f"❌ Error en egreso DB: {e}")
+            print(f"❌ Error en egreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
         embed = discord.Embed(title="📤 Egreso Registrado", color=0xE74C3C)
         embed.add_field(name="Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
@@ -289,7 +292,7 @@ async def actualizar_dashboard():
         dashboard_message_id = msg.id
         await db.set_config("dashboard_message_id", str(msg.id))
     except Exception as e:
-        print(f"⚠️ Error actualizando dashboard: {e}")
+        print(f"⚠️ Error actualizando dashboard: {e}", flush=True)
 
 
 # ── Slash commands ────────────────────────────────────────────────────────────
@@ -373,20 +376,20 @@ async def setup_panels(guild):
         await ch.send(embed=embed, view=PanelEgreso())
 
     _panels_initialized = True
-    print("✅ Paneles configurados")
+    print("✅ Paneles configurados", flush=True)
 
 
-# ── Inicialización en background (no bloquea las interacciones) ───────────────
+# ── Inicialización en background ──────────────────────────────────────────────
 async def startup():
     global db, dashboard_message_id, _panels_initialized, _db_ready
 
-    print("🔄 Iniciando base de datos...")
+    print("🔄 Iniciando base de datos...", flush=True)
     try:
         db = Database()
         await db.init()
         _db_ready = True
     except Exception as e:
-        print(f"❌ FATAL — No se pudo conectar a la DB: {e}")
+        print(f"❌ FATAL — No se pudo conectar a la DB: {e}", flush=True)
         return
 
     try:
@@ -394,15 +397,15 @@ async def startup():
         if saved:
             dashboard_message_id = int(saved)
     except Exception as e:
-        print(f"⚠️ No se pudo recuperar dashboard_message_id: {e}")
+        print(f"⚠️ No se pudo recuperar dashboard_message_id: {e}", flush=True)
 
     try:
         guild_obj = discord.Object(id=GUILD_ID)
         bot.tree.copy_global_to(guild=guild_obj)
         await bot.tree.sync(guild=guild_obj)
-        print("✅ Slash commands sincronizados")
+        print("✅ Slash commands sincronizados", flush=True)
     except Exception as e:
-        print(f"❌ Error sincronizando slash commands: {e}")
+        print(f"❌ Error sincronizando slash commands: {e}", flush=True)
 
     if not _panels_initialized:
         try:
@@ -410,23 +413,21 @@ async def startup():
             if real_guild:
                 await setup_panels(real_guild)
             else:
-                print(f"⚠️ No se encontró el guild con ID {GUILD_ID}")
+                print(f"⚠️ No se encontró el guild con ID {GUILD_ID}", flush=True)
         except Exception as e:
-            print(f"❌ Error configurando paneles: {e}")
+            print(f"❌ Error configurando paneles: {e}", flush=True)
 
     if not actualizar_dashboard.is_running():
         actualizar_dashboard.start()
-        print("✅ Dashboard iniciado")
+        print("✅ Dashboard iniciado", flush=True)
 
 
 # ── on_ready ──────────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
-    print(f"✅ Bot conectado como {bot.user}")
-    # Registrar views persistentes PRIMERO (para que los botones respondan de inmediato)
+    print(f"✅ Bot conectado como {bot.user}", flush=True)
     bot.add_view(PanelIngreso())
     bot.add_view(PanelEgreso())
-    # Lanzar todo lo demás en background sin bloquear
     asyncio.create_task(startup())
 
 
