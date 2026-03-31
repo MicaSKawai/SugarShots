@@ -17,7 +17,6 @@ class Database:
         self.headers = None
 
     async def init(self):
-        # Validar variables de entorno ANTES de cualquier otra cosa
         print(f"🔍 TURSO_DATABASE_URL presente: {'SI -> ' + TURSO_URL if TURSO_URL else 'NO ❌'}")
         print(f"🔍 TURSO_AUTH_TOKEN presente:   {'SI' if TURSO_TOKEN else 'NO ❌'}")
 
@@ -31,7 +30,6 @@ class Database:
             "Authorization": f"Bearer {TURSO_TOKEN}",
             "Content-Type": "application/json",
         }
-
         self.session = aiohttp.ClientSession()
         print(f"🔍 Conectando a: {self.base_url}")
 
@@ -45,8 +43,6 @@ class Database:
     async def close(self):
         if self.session:
             await self.session.close()
-
-    # ── Ejecución de queries ──────────────────────────────────────────────────
 
     async def _execute(self, statements: list[dict]) -> list:
         payload = {"requests": statements}
@@ -94,8 +90,6 @@ class Database:
             print(f"❌ Run error: {result}")
             raise Exception(f"Run error: {result}")
 
-    # ── Tablas ────────────────────────────────────────────────────────────────
-
     async def _create_tables(self):
         await self._run("""
             CREATE TABLE IF NOT EXISTS inventario (
@@ -124,8 +118,6 @@ class Database:
                 valor TEXT
             )
         """)
-
-    # ── Inventario ────────────────────────────────────────────────────────────
 
     async def add_item(self, nombre: str, categoria: str, cantidad: int):
         existing = await self._query(
@@ -165,8 +157,6 @@ class Database:
             "SELECT nombre, categoria, cantidad FROM inventario WHERE cantidad > 0 ORDER BY categoria, nombre"
         )
 
-    # ── Movimientos ───────────────────────────────────────────────────────────
-
     async def log_movimiento(self, tipo, item, categoria, cantidad, usuario, usuario_id, motivo):
         fecha = datetime.utcnow().isoformat()
         await self._run(
@@ -180,8 +170,6 @@ class Database:
             "SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT ?",
             [limit]
         )
-
-    # ── Config ────────────────────────────────────────────────────────────────
 
     async def get_config(self, clave: str) -> str | None:
         rows = await self._query(
