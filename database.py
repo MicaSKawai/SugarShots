@@ -14,7 +14,8 @@ class Database:
     async def init(self):
         if not TURSO_URL or not TURSO_TOKEN:
             raise Exception("Faltan variables de Turso")
-        self.base_url = TURSO_URL.rstrip("/") + "/v2/pipeline"
+        url = TURSO_URL.replace("libsql://", "https://").rstrip("/")
+        self.base_url = url + "/v2/pipeline"
         self.headers  = {
             "Authorization": f"Bearer {TURSO_TOKEN}",
             "Content-Type":  "application/json",
@@ -35,7 +36,6 @@ class Database:
             return await resp.json()
 
     async def _exec(self, sql, params=None):
-        """Ejecuta SQL sin retorno de filas."""
         req = {"type": "execute", "stmt": {"sql": sql}}
         if params:
             req["stmt"]["positional_args"] = params
@@ -45,7 +45,6 @@ class Database:
             raise Exception(res["error"]["message"])
 
     async def _fetch(self, sql, params=None):
-        """Ejecuta SQL y retorna lista de dicts."""
         req = {"type": "execute", "stmt": {"sql": sql}}
         if params:
             req["stmt"]["positional_args"] = params
@@ -62,12 +61,11 @@ class Database:
         ]
 
     def _p(self, v):
-        """Convierte valor Python al formato Turso positional_arg."""
-        if v is None:             return {"type": "null"}
-        if isinstance(v, bool):   return {"type": "integer", "value": 1 if v else 0}
-        if isinstance(v, int):    return {"type": "integer", "value": v}
-        if isinstance(v, float):  return {"type": "float",   "value": v}
-        return                           {"type": "text",    "value": str(v)}
+        if v is None:            return {"type": "null"}
+        if isinstance(v, bool):  return {"type": "integer", "value": 1 if v else 0}
+        if isinstance(v, int):   return {"type": "integer", "value": v}
+        if isinstance(v, float): return {"type": "float",   "value": v}
+        return                          {"type": "text",    "value": str(v)}
 
     async def _create_tables(self):
         await self._exec("""CREATE TABLE IF NOT EXISTS inventario (
