@@ -62,6 +62,16 @@ def categoria_de_item(nombre):
 def emoji_de_item(nombre):
     return CATEGORIAS[categoria_de_item(nombre)][0]
 
+async def send_temp(interaction, embed, seconds=10):
+    """Manda un mensaje y lo borra después de X segundos."""
+    await interaction.response.send_message(embed=embed)
+    msg = await interaction.original_response()
+    await asyncio.sleep(seconds)
+    try:
+        await msg.delete()
+    except:
+        pass
+
 # ── Modales ───────────────────────────────────────────────────────────────────
 class ModalIngreso(discord.ui.Modal):
     def __init__(self, categoria, item):
@@ -95,9 +105,9 @@ class ModalIngreso(discord.ui.Modal):
         embed.add_field(name="Armero",   value=interaction.user.mention,                 inline=True)
         if self.notas.value:
             embed.add_field(name="Notas", value=self.notas.value, inline=False)
+        embed.set_footer(text="Este mensaje se borrará en 10 segundos")
         embed.timestamp = datetime.now(timezone.utc)
-        embed.set_footer(text="Sistema de Armería")
-        await interaction.response.send_message(embed=embed)
+        await send_temp(interaction, embed)
 
 
 class ModalEgreso(discord.ui.Modal):
@@ -136,9 +146,9 @@ class ModalEgreso(discord.ui.Modal):
         embed.add_field(name="Cantidad", value=f"-{cant}",                               inline=True)
         embed.add_field(name="Armero",   value=interaction.user.mention,                 inline=True)
         embed.add_field(name="Motivo",   value=self.motivo.value,                        inline=False)
+        embed.set_footer(text="Este mensaje se borrará en 10 segundos")
         embed.timestamp = datetime.now(timezone.utc)
-        embed.set_footer(text="Sistema de Armería")
-        await interaction.response.send_message(embed=embed)
+        await send_temp(interaction, embed)
 
 
 # ── Selects ───────────────────────────────────────────────────────────────────
@@ -340,7 +350,6 @@ async def cmd_reset(interaction):
 
 # ── Setup de paneles ──────────────────────────────────────────────────────────
 async def setup_panels(guild, force=False):
-    # Panel Ingreso
     ch = guild.get_channel(CHANNEL_INGRESO)
     if ch:
         saved_id = await db.get_config("panel_ingreso_id")
@@ -349,10 +358,9 @@ async def setup_panels(guild, force=False):
             try:
                 await ch.fetch_message(int(saved_id))
                 panel_exists = True
-                print("✅ Panel ingreso ya existe, no se re-crea", flush=True)
+                print("✅ Panel ingreso ya existe", flush=True)
             except discord.NotFound:
                 panel_exists = False
-
         if not panel_exists:
             await ch.purge(limit=50)
             embed = discord.Embed(
@@ -370,7 +378,6 @@ async def setup_panels(guild, force=False):
             msg = await ch.send(embed=embed, view=PanelIngreso())
             await db.set_config("panel_ingreso_id", str(msg.id))
 
-    # Panel Egreso
     ch = guild.get_channel(CHANNEL_EGRESO)
     if ch:
         saved_id = await db.get_config("panel_egreso_id")
@@ -379,10 +386,9 @@ async def setup_panels(guild, force=False):
             try:
                 await ch.fetch_message(int(saved_id))
                 panel_exists = True
-                print("✅ Panel egreso ya existe, no se re-crea", flush=True)
+                print("✅ Panel egreso ya existe", flush=True)
             except discord.NotFound:
                 panel_exists = False
-
         if not panel_exists:
             await ch.purge(limit=50)
             embed = discord.Embed(
