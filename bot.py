@@ -24,7 +24,8 @@ CHANNEL_ARMERIA = 1488350783471882330
 
 ALLOWED_ROLES = ["Armero", "Admin", "armero", "admin"]
 
-BANNER_URL = "https://i.imgur.com/4esIKj9.png"
+BANNER_DASHBOARD = "https://i.imgur.com/4esIKj9.png"
+BANNER_ACCION    = "https://i.imgur.com/AScCGjU.png"
 
 ARMAS = [
     "Vintage", "SNS", "USP", "AP", "Skorpion",
@@ -73,6 +74,9 @@ async def send_temp(interaction, embed, seconds=10):
     except:
         pass
 
+def separador():
+    return "══════════════════════════════"
+
 # ── Modales ───────────────────────────────────────────────────────────────────
 class ModalIngreso(discord.ui.Modal):
     def __init__(self, categoria, item):
@@ -100,14 +104,19 @@ class ModalIngreso(discord.ui.Modal):
         except Exception as e:
             print(f"❌ Error en ingreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
-        embed = discord.Embed(title="✅  Ingreso Registrado", color=0x2ECC71)
-        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
-        embed.add_field(name="▸ Cantidad", value=f"**+{cant}**",                            inline=True)
-        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                  inline=True)
+
+        embed = discord.Embed(
+            title="📥  INGRESO REGISTRADO",
+            description=f"{separador()}",
+            color=0x2ECC71
+        )
+        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
+        embed.add_field(name="▸ Cantidad", value=f"**+{cant}**",                                inline=True)
+        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
         if self.notas.value:
-            embed.add_field(name="▸ Notas", value=self.notas.value, inline=False)
+            embed.add_field(name="▸ Notas", value=f"*{self.notas.value}*", inline=False)
+        embed.set_image(url=BANNER_ACCION)
         embed.set_footer(text="Sistema de Armería  •  Este mensaje se borrará en 10s")
-        embed.set_thumbnail(url=BANNER_URL)
         embed.timestamp = datetime.now(timezone.utc)
         await send_temp(interaction, embed)
 
@@ -143,13 +152,18 @@ class ModalEgreso(discord.ui.Modal):
         except Exception as e:
             print(f"❌ Error en egreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
-        embed = discord.Embed(title="📤  Egreso Registrado", color=0xE74C3C)
-        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} {self.item}", inline=True)
-        embed.add_field(name="▸ Cantidad", value=f"**-{cant}**",                            inline=True)
-        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                  inline=True)
-        embed.add_field(name="▸ Motivo",   value=self.motivo.value,                         inline=False)
+
+        embed = discord.Embed(
+            title="📤  EGRESO REGISTRADO",
+            description=f"{separador()}",
+            color=0xE74C3C
+        )
+        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
+        embed.add_field(name="▸ Cantidad", value=f"**-{cant}**",                                inline=True)
+        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
+        embed.add_field(name="▸ Motivo",   value=f"*{self.motivo.value}*",                      inline=False)
+        embed.set_image(url=BANNER_ACCION)
         embed.set_footer(text="Sistema de Armería  •  Este mensaje se borrará en 10s")
-        embed.set_thumbnail(url=BANNER_URL)
         embed.timestamp = datetime.now(timezone.utc)
         await send_temp(interaction, embed)
 
@@ -245,7 +259,6 @@ class PanelEgreso(discord.ui.View):
 dashboard_message_id = None
 
 def fmt_stock(n):
-    """Formatea el número de stock con color visual."""
     n = int(n or 0)
     if n == 0:
         return "**` 0 `**"
@@ -257,71 +270,42 @@ def build_embed(inventario, movs):
     embed = discord.Embed(
         title="🏛️  ARMERÍA  —  INVENTARIO",
         description=(
-            "──────────────────────────────\n"
+            f"{separador()}\n"
             "  Sistema de control de stock en tiempo real\n"
-            "──────────────────────────────"
+            f"{separador()}"
         ),
-        color=0x8B0000  # Rojo oscuro, tono mafioso
+        color=0x8B0000
     )
+    embed.set_image(url=BANNER_DASHBOARD)
 
-    # Imagen del banner
-    embed.set_image(url=BANNER_URL)
-
-    # ── ARMAS ──
     armas_lines = "\n".join(
-        f"🔫  `{n:<26}`  {fmt_stock(inventario.get(n, 0))}"
-        for n in ARMAS
+        f"🔫  `{n:<26}`  {fmt_stock(inventario.get(n, 0))}" for n in ARMAS
     )
-    embed.add_field(
-        name="╔══  🔫  ARMAS  ══╗",
-        value=armas_lines,
-        inline=False
-    )
+    embed.add_field(name="╔══  🔫  ARMAS  ══╗", value=armas_lines, inline=False)
+    embed.add_field(name="", value=separador(), inline=False)
 
-    embed.add_field(name="", value="──────────────────────────────", inline=False)
-
-    # ── CARGADORES ──
     carg_lines = "\n".join(
-        f"🔄  `{n:<32}`  {fmt_stock(inventario.get(n, 0))}"
-        for n in CARGADORES
+        f"🔄  `{n:<32}`  {fmt_stock(inventario.get(n, 0))}" for n in CARGADORES
     )
-    embed.add_field(
-        name="╔══  🔄  CARGADORES  ══╗",
-        value=carg_lines,
-        inline=False
-    )
+    embed.add_field(name="╔══  🔄  CARGADORES  ══╗", value=carg_lines, inline=False)
+    embed.add_field(name="", value=separador(), inline=False)
 
-    embed.add_field(name="", value="──────────────────────────────", inline=False)
-
-    # ── MEJORAS ──
     mej_lines = "\n".join(
-        f"⚙️  `{n:<24}`  {fmt_stock(inventario.get(n, 0))}"
-        for n in MEJORAS
+        f"⚙️  `{n:<24}`  {fmt_stock(inventario.get(n, 0))}" for n in MEJORAS
     )
-    embed.add_field(
-        name="╔══  ⚙️  MEJORAS  ══╗",
-        value=mej_lines,
-        inline=False
-    )
+    embed.add_field(name="╔══  ⚙️  MEJORAS  ══╗", value=mej_lines, inline=False)
 
-    embed.add_field(name="", value="──────────────────────────────", inline=False)
-
-    # ── ÚLTIMOS MOVIMIENTOS ──
     if movs:
+        embed.add_field(name="", value=separador(), inline=False)
         lines = []
         for m in movs[:5]:
             e = "📥" if m["tipo"] == "ingreso" else "📤"
             s = "+" if m["tipo"] == "ingreso" else "-"
             ts = m["fecha"][:16].replace("T", " ")
-            usuario = m["usuario"].split("#")[0]
             lines.append(
-                f"{e}  `{ts}`  **{usuario}**  —  {emoji_de_item(m['item'])} {m['item']}  `{s}{m['cantidad']}`"
+                f"{e}  `{ts}`  **{m['usuario'].split('#')[0]}**  —  {emoji_de_item(m['item'])} {m['item']}  `{s}{m['cantidad']}`"
             )
-        embed.add_field(
-            name="📋  ÚLTIMOS MOVIMIENTOS",
-            value="\n".join(lines),
-            inline=False
-        )
+        embed.add_field(name="📋  ÚLTIMOS MOVIMIENTOS", value="\n".join(lines), inline=False)
 
     total = sum(int(v or 0) for v in inventario.values())
     embed.set_footer(text=f"Total en stock: {total} unidades  •  ⚠️ = stock bajo (≤3)  •  Actualizado")
@@ -367,19 +351,26 @@ async def cmd_historial(interaction, cantidad: int = 10):
     registros = await db.get_historial(min(max(cantidad, 1), 20))
     if not registros:
         return await interaction.response.send_message("📋 Sin movimientos.", ephemeral=True)
-    embed = discord.Embed(title=f"📋  Historial — Últimos {cantidad}", color=0x8B0000)
-    embed.set_thumbnail(url=BANNER_URL)
+
+    embed = discord.Embed(
+        title="📋  HISTORIAL DE MOVIMIENTOS",
+        description=separador(),
+        color=0x8B0000
+    )
     lines = []
     for r in registros:
         e = "📥" if r["tipo"] == "ingreso" else "📤"
         s = "+" if r["tipo"] == "ingreso" else "-"
         ts = r["fecha"][:16].replace("T", " ")
-        mot = f"  *{r['motivo']}*" if r.get("motivo") and r["motivo"] != "—" else ""
+        mot = f"\n  *↳ {r['motivo']}*" if r.get("motivo") and r["motivo"] != "—" else ""
         lines.append(
-            f"{e}  `{ts}`  **{r['usuario'].split('#')[0]}**  —  {emoji_de_item(r['item'])} {r['item']}  `{s}{r['cantidad']}`{mot}"
+            f"{e}  `{ts}`  **{r['usuario'].split('#')[0]}**\n"
+            f"  {emoji_de_item(r['item'])} {r['item']}  `{s}{r['cantidad']}`{mot}"
         )
-    embed.description = "\n".join(lines)
-    embed.set_footer(text="Sistema de Armería")
+    embed.description = separador() + "\n\n" + "\n\n".join(lines)
+    embed.set_image(url=BANNER_ACCION)
+    embed.set_footer(text=f"Sistema de Armería  •  Mostrando últimos {len(registros)} movimientos")
+    embed.timestamp = datetime.now(timezone.utc)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -389,11 +380,22 @@ async def cmd_stock(interaction, item: str):
     row = await db.get_item(item)
     if not row:
         return await interaction.response.send_message(f"❌ **{item}** no encontrado.", ephemeral=True)
-    embed = discord.Embed(title=f"{emoji_de_item(item)}  {item}", color=0x8B0000)
-    embed.add_field(name="▸ Stock",     value=f"**{row['cantidad']}** unidades")
-    embed.add_field(name="▸ Categoría", value=row["categoria"].capitalize())
-    embed.set_thumbnail(url=BANNER_URL)
+
+    n = int(row["cantidad"] or 0)
+    color = 0xE74C3C if n <= 3 else 0x2ECC71
+    estado = "⚠️  Stock bajo" if n <= 3 else "✅  En stock"
+
+    embed = discord.Embed(
+        title=f"{emoji_de_item(item)}  {item}",
+        description=separador(),
+        color=color
+    )
+    embed.add_field(name="▸ Stock",     value=f"**{n}** unidades", inline=True)
+    embed.add_field(name="▸ Categoría", value=row["categoria"].capitalize(), inline=True)
+    embed.add_field(name="▸ Estado",    value=estado, inline=True)
+    embed.set_image(url=BANNER_ACCION)
     embed.set_footer(text="Sistema de Armería")
+    embed.timestamp = datetime.now(timezone.utc)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -424,17 +426,17 @@ async def setup_panels(guild, force=False):
             embed = discord.Embed(
                 title="📥  PANEL DE INGRESO",
                 description=(
-                    "──────────────────────────────\n"
+                    f"{separador()}\n"
                     "Registrá nuevos ítems al inventario de la armería.\n\n"
                     "🔫  **Registrar Arma** — Pistolas, SMGs y escopetas\n"
                     "🔄  **Registrar Cargador** — Todo tipo de cargadores\n"
                     "⚙️  **Registrar Mejora** — Accesorios y modificaciones\n\n"
-                    "*Solo personal con rol **Armero** o **Admin**.*\n"
-                    "──────────────────────────────"
+                    f"*Solo personal con rol **Armero** o **Admin**.*\n"
+                    f"{separador()}"
                 ),
                 color=0x2ECC71
             )
-            embed.set_image(url=BANNER_URL)
+            embed.set_image(url=BANNER_ACCION)
             embed.set_footer(text="Sistema de Armería  •  Panel de Ingreso")
             msg = await ch.send(embed=embed, view=PanelIngreso())
             await db.set_config("panel_ingreso_id", str(msg.id))
@@ -455,15 +457,15 @@ async def setup_panels(guild, force=False):
             embed = discord.Embed(
                 title="📤  PANEL DE EGRESO",
                 description=(
-                    "──────────────────────────────\n"
+                    f"{separador()}\n"
                     "Retirá ítems del inventario de la armería.\n\n"
                     "📤  **Retirar Ítem** — Elegí ítem, cantidad y motivo.\n\n"
-                    "⚠️  *Todos los egresos se registran con usuario y motivo obligatorio.*\n"
-                    "──────────────────────────────"
+                    f"⚠️  *Todos los egresos se registran con usuario y motivo obligatorio.*\n"
+                    f"{separador()}"
                 ),
                 color=0xE74C3C
             )
-            embed.set_image(url=BANNER_URL)
+            embed.set_image(url=BANNER_ACCION)
             embed.set_footer(text="Sistema de Armería  •  Panel de Egreso")
             msg = await ch.send(embed=embed, view=PanelEgreso())
             await db.set_config("panel_egreso_id", str(msg.id))
