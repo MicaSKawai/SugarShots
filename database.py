@@ -62,9 +62,9 @@ class Database:
 
     def _p(self, v):
         if v is None:            return {"type": "null"}
-        if isinstance(v, bool):  return {"type": "integer", "value": 1 if v else 0}
-        if isinstance(v, int):   return {"type": "integer", "value": v}
-        if isinstance(v, float): return {"type": "float",   "value": v}
+        if isinstance(v, bool):  return {"type": "integer", "value": str(1 if v else 0)}
+        if isinstance(v, int):   return {"type": "integer", "value": str(v)}
+        if isinstance(v, float): return {"type": "float",   "value": str(v)}
         return                          {"type": "text",    "value": str(v)}
 
     async def _create_tables(self):
