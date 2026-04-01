@@ -2,7 +2,7 @@
 Armería Bot — Discord
 """
 import sys
-sys.stdout.reconfigure(line_buffering=True)  # Fuerza prints en tiempo real en Render
+sys.stdout.reconfigure(line_buffering=True)
 
 import discord
 from discord.ext import commands, tasks
@@ -160,7 +160,7 @@ class SelectIngreso(discord.ui.Select):
 
 class SelectEgreso(discord.ui.Select):
     def __init__(self, inventario):
-        self.inv = {i["nombre"]: i["cantidad"] for i in inventario}
+        self.inv = {i["nombre"]: int(i["cantidad"] or 0) for i in inventario}
         options = [
             discord.SelectOption(label=i["nombre"], value=i["nombre"],
                                  description=f"Stock: {i['cantidad']}",
@@ -220,7 +220,7 @@ class PanelEgreso(discord.ui.View):
         if not has_permission(interaction.user):
             return await interaction.response.send_message("❌ Sin permisos.", ephemeral=True)
         if not _db_ready:
-            return await interaction.response.send_message("⏳ El bot todavía está iniciando, intentá en unos segundos.", ephemeral=True)
+            return await interaction.response.send_message("⏳ El bot todavía está iniciando.", ephemeral=True)
         inv = await db.get_inventario_con_stock()
         if not inv:
             return await interaction.response.send_message("⚠️ Inventario vacío.", ephemeral=True)
@@ -257,14 +257,15 @@ def build_embed(inventario, movs):
     if movs:
         lines = []
         for m in movs[:5]:
-            e = "📥" if m["tipo"]=="ingreso" else "📤"
-            s = "+" if m["tipo"]=="ingreso" else "-"
-            ts = m["fecha"][:16].replace("T"," ")
+            e = "📥" if m["tipo"] == "ingreso" else "📤"
+            s = "+" if m["tipo"] == "ingreso" else "-"
+            ts = m["fecha"][:16].replace("T", " ")
             lines.append(f"{e} `{ts}` **{m['usuario'].split('#')[0]}** — {m['item']} {s}{m['cantidad']}")
         embed.add_field(name="📋  ÚLTIMOS MOVIMIENTOS", value="\n".join(lines), inline=False)
     embed.set_footer(text=f"Total en stock: {sum(inventario.values())}  •  Actualizado")
     embed.timestamp = datetime.utcnow()
     return embed
+
 
 @tasks.loop(seconds=30)
 async def actualizar_dashboard():
@@ -277,7 +278,7 @@ async def actualizar_dashboard():
     if not ch: return
     try:
         raw = await db.get_inventario_completo()
-        inv = {r["nombre"]: r["cantidad"] for r in raw}
+        inv = {r["nombre"]: int(r["cantidad"] or 0) for r in raw}
         movs = await db.get_historial(5)
         embed = build_embed(inv, movs)
         if dashboard_message_id:
@@ -301,15 +302,15 @@ async def actualizar_dashboard():
 async def cmd_historial(interaction, cantidad: int = 10):
     if not has_permission(interaction.user):
         return await interaction.response.send_message("❌ Sin permisos.", ephemeral=True)
-    registros = await db.get_historial(min(max(cantidad,1),20))
+    registros = await db.get_historial(min(max(cantidad, 1), 20))
     if not registros:
         return await interaction.response.send_message("📋 Sin movimientos.", ephemeral=True)
     embed = discord.Embed(title=f"📋 Historial — Últimos {cantidad}", color=0x3498DB)
     lines = []
     for r in registros:
-        e = "📥" if r["tipo"]=="ingreso" else "📤"
-        s = "+" if r["tipo"]=="ingreso" else "-"
-        ts = r["fecha"][:16].replace("T"," ")
+        e = "📥" if r["tipo"] == "ingreso" else "📤"
+        s = "+" if r["tipo"] == "ingreso" else "-"
+        ts = r["fecha"][:16].replace("T", " ")
         mot = f" | *{r['motivo']}*" if r.get("motivo") and r["motivo"] != "—" else ""
         lines.append(f"{e} `{ts}` **{r['usuario'].split('#')[0]}** — {emoji_de_item(r['item'])} {r['item']} {s}{r['cantidad']}{mot}")
     embed.description = "\n".join(lines)
@@ -331,7 +332,7 @@ async def cmd_stock(interaction, item: str):
 
 @bot.tree.command(name="resetpaneles", description="[ADMIN] Resetea los paneles")
 async def cmd_reset(interaction):
-    if not any(r.name in ["Admin","admin"] for r in interaction.user.roles):
+    if not any(r.name in ["Admin", "admin"] for r in interaction.user.roles):
         return await interaction.response.send_message("❌ Solo admins.", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
     global _panels_initialized
