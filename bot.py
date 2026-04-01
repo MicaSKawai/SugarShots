@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from database import Database
 
 from keep_alive import keep_alive
@@ -48,7 +48,6 @@ intents.message_content = True
 intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 db: Database = None
-_panels_initialized = False
 _db_ready = False
 
 def has_permission(member):
@@ -96,7 +95,7 @@ class ModalIngreso(discord.ui.Modal):
         embed.add_field(name="Armero",   value=interaction.user.mention,                 inline=True)
         if self.notas.value:
             embed.add_field(name="Notas", value=self.notas.value, inline=False)
-        embed.timestamp = datetime.utcnow()
+        embed.timestamp = datetime.now(timezone.utc)
         embed.set_footer(text="Sistema de Armería")
         await interaction.response.send_message(embed=embed)
 
@@ -137,7 +136,7 @@ class ModalEgreso(discord.ui.Modal):
         embed.add_field(name="Cantidad", value=f"-{cant}",                               inline=True)
         embed.add_field(name="Armero",   value=interaction.user.mention,                 inline=True)
         embed.add_field(name="Motivo",   value=self.motivo.value,                        inline=False)
-        embed.timestamp = datetime.utcnow()
+        embed.timestamp = datetime.now(timezone.utc)
         embed.set_footer(text="Sistema de Armería")
         await interaction.response.send_message(embed=embed)
 
@@ -263,7 +262,7 @@ def build_embed(inventario, movs):
             lines.append(f"{e} `{ts}` **{m['usuario'].split('#')[0]}** — {m['item']} {s}{m['cantidad']}")
         embed.add_field(name="📋  ÚLTIMOS MOVIMIENTOS", value="\n".join(lines), inline=False)
     embed.set_footer(text=f"Total en stock: {sum(inventario.values())}  •  Actualizado")
-    embed.timestamp = datetime.utcnow()
+    embed.timestamp = datetime.now(timezone.utc)
     return embed
 
 
@@ -288,7 +287,7 @@ async def actualizar_dashboard():
                 return
             except discord.NotFound:
                 dashboard_message_id = None
-        await ch.purge(limit=10)
+        await ch.purge(limit=50)
         msg = await ch.send(embed=embed)
         dashboard_message_id = msg.id
         await db.set_config("dashboard_message_id", str(msg.id))
@@ -335,54 +334,76 @@ async def cmd_reset(interaction):
     if not any(r.name in ["Admin", "admin"] for r in interaction.user.roles):
         return await interaction.response.send_message("❌ Solo admins.", ephemeral=True)
     await interaction.response.defer(ephemeral=True)
-    global _panels_initialized
-    _panels_initialized = False
-    await setup_panels(interaction.guild)
+    await setup_panels(interaction.guild, force=True)
     await interaction.followup.send("✅ Paneles reseteados.", ephemeral=True)
 
 
 # ── Setup de paneles ──────────────────────────────────────────────────────────
-async def setup_panels(guild):
-    global _panels_initialized
+async def setup_panels(guild, force=False):
+    # Panel Ingreso
     ch = guild.get_channel(CHANNEL_INGRESO)
     if ch:
-        await ch.purge(limit=10)
-        embed = discord.Embed(
-            title="📥  PANEL DE INGRESO",
-            description=(
-                "Registrá nuevos ítems al inventario de la armería.\n\n"
-                "**🔫 Registrar Arma** — Pistolas, SMGs y escopetas\n"
-                "**🔄 Registrar Cargador** — Todo tipo de cargadores\n"
-                "**⚙️ Registrar Mejora** — Accesorios y modificaciones\n\n"
-                "*Solo personal con rol **Armero** o **Admin**.*"
-            ),
-            color=0x2ECC71
-        )
-        embed.set_footer(text="Sistema de Armería • Panel de Ingreso")
-        await ch.send(embed=embed, view=PanelIngreso())
+        saved_id = await db.get_config("panel_ingreso_id")
+        panel_exists = False
+        if saved_id and not force:
+            try:
+                await ch.fetch_message(int(saved_id))
+                panel_exists = True
+                print("✅ Panel ingreso ya existe, no se re-crea", flush=True)
+            except discord.NotFound:
+                panel_exists = False
 
+        if not panel_exists:
+            await ch.purge(limit=50)
+            embed = discord.Embed(
+                title="📥  PANEL DE INGRESO",
+                description=(
+                    "Registrá nuevos ítems al inventario de la armería.\n\n"
+                    "**🔫 Registrar Arma** — Pistolas, SMGs y escopetas\n"
+                    "**🔄 Registrar Cargador** — Todo tipo de cargadores\n"
+                    "**⚙️ Registrar Mejora** — Accesorios y modificaciones\n\n"
+                    "*Solo personal con rol **Armero** o **Admin**.*"
+                ),
+                color=0x2ECC71
+            )
+            embed.set_footer(text="Sistema de Armería • Panel de Ingreso")
+            msg = await ch.send(embed=embed, view=PanelIngreso())
+            await db.set_config("panel_ingreso_id", str(msg.id))
+
+    # Panel Egreso
     ch = guild.get_channel(CHANNEL_EGRESO)
     if ch:
-        await ch.purge(limit=10)
-        embed = discord.Embed(
-            title="📤  PANEL DE EGRESO",
-            description=(
-                "Retirá ítems del inventario de la armería.\n\n"
-                "**📤 Retirar Ítem** — Elegí ítem, cantidad y motivo.\n\n"
-                "⚠️ *Todos los egresos se registran con usuario y motivo obligatorio.*"
-            ),
-            color=0xE74C3C
-        )
-        embed.set_footer(text="Sistema de Armería • Panel de Egreso")
-        await ch.send(embed=embed, view=PanelEgreso())
+        saved_id = await db.get_config("panel_egreso_id")
+        panel_exists = False
+        if saved_id and not force:
+            try:
+                await ch.fetch_message(int(saved_id))
+                panel_exists = True
+                print("✅ Panel egreso ya existe, no se re-crea", flush=True)
+            except discord.NotFound:
+                panel_exists = False
 
-    _panels_initialized = True
-    print("✅ Paneles configurados", flush=True)
+        if not panel_exists:
+            await ch.purge(limit=50)
+            embed = discord.Embed(
+                title="📤  PANEL DE EGRESO",
+                description=(
+                    "Retirá ítems del inventario de la armería.\n\n"
+                    "**📤 Retirar Ítem** — Elegí ítem, cantidad y motivo.\n\n"
+                    "⚠️ *Todos los egresos se registran con usuario y motivo obligatorio.*"
+                ),
+                color=0xE74C3C
+            )
+            embed.set_footer(text="Sistema de Armería • Panel de Egreso")
+            msg = await ch.send(embed=embed, view=PanelEgreso())
+            await db.set_config("panel_egreso_id", str(msg.id))
+
+    print("✅ Paneles verificados", flush=True)
 
 
-# ── Inicialización en background ──────────────────────────────────────────────
+# ── Inicialización ────────────────────────────────────────────────────────────
 async def startup():
-    global db, dashboard_message_id, _panels_initialized, _db_ready
+    global db, dashboard_message_id, _db_ready
 
     print("🔄 Iniciando base de datos...", flush=True)
     try:
@@ -408,22 +429,20 @@ async def startup():
     except Exception as e:
         print(f"❌ Error sincronizando slash commands: {e}", flush=True)
 
-    if not _panels_initialized:
-        try:
-            real_guild = bot.get_guild(GUILD_ID)
-            if real_guild:
-                await setup_panels(real_guild)
-            else:
-                print(f"⚠️ No se encontró el guild con ID {GUILD_ID}", flush=True)
-        except Exception as e:
-            print(f"❌ Error configurando paneles: {e}", flush=True)
+    try:
+        real_guild = bot.get_guild(GUILD_ID)
+        if real_guild:
+            await setup_panels(real_guild)
+        else:
+            print(f"⚠️ No se encontró el guild con ID {GUILD_ID}", flush=True)
+    except Exception as e:
+        print(f"❌ Error configurando paneles: {e}", flush=True)
 
     if not actualizar_dashboard.is_running():
         actualizar_dashboard.start()
         print("✅ Dashboard iniciado", flush=True)
 
 
-# ── on_ready ──────────────────────────────────────────────────────────────────
 @bot.event
 async def on_ready():
     print(f"✅ Bot conectado como {bot.user}", flush=True)
