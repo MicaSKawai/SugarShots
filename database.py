@@ -28,38 +28,29 @@ class Database:
         if self.session:
             await self.session.close()
 
-    async def _run(self, requests):
-        async with self.session.post(self.base_url, json={"requests": requests}, headers=self.headers) as resp:
+    def _escape(self, v):
+        if v is None:
+            return "NULL"
+        if isinstance(v, int):
+            return str(v)
+        if isinstance(v, float):
+            return str(v)
+        return "'" + str(v).replace("'", "''") + "'"
+
+    async def _sql(self, sql):
+        req = {"type": "execute", "stmt": {"sql": sql}}
+        async with self.session.post(self.base_url, json={"requests": [req]}, headers=self.headers) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise Exception(f"Turso {resp.status}: {text}")
-            return await resp.json()
-
-    async def _exec(self, sql, params=None):
-        req = {"type": "execute", "stmt": {"sql": sql}}
-        if params:
-            req["stmt"]["positional_args"] = [
-                {"type": "text", "value": str(p)} if not isinstance(p, int)
-                else {"type": "integer", "value": str(p)}
-                for p in params
-            ]
-        result = await self._run([req])
-        res = result["results"][0]
+            data = await resp.json()
+        res = data["results"][0]
         if res.get("type") == "error":
             raise Exception(res["error"]["message"])
+        return res
 
-    async def _fetch(self, sql, params=None):
-        req = {"type": "execute", "stmt": {"sql": sql}}
-        if params:
-            req["stmt"]["positional_args"] = [
-                {"type": "text", "value": str(p)} if not isinstance(p, int)
-                else {"type": "integer", "value": str(p)}
-                for p in params
-            ]
-        result = await self._run([req])
-        res = result["results"][0]
-        if res.get("type") == "error":
-            raise Exception(res["error"]["message"])
+    async def _fetch(self, sql):
+        res = await self._sql(sql)
         data = res["response"]["result"]
         cols = [c["name"] for c in data["cols"]]
         return [
@@ -69,12 +60,12 @@ class Database:
         ]
 
     async def _create_tables(self):
-        await self._exec("""CREATE TABLE IF NOT EXISTS inventario (
+        await self._sql("""CREATE TABLE IF NOT EXISTS inventario (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             nombre    TEXT    NOT NULL UNIQUE,
             categoria TEXT    NOT NULL,
             cantidad  INTEGER NOT NULL DEFAULT 0)""")
-        await self._exec("""CREATE TABLE IF NOT EXISTS movimientos (
+        await self._sql("""CREATE TABLE IF NOT EXISTS movimientos (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             tipo       TEXT    NOT NULL,
             item       TEXT    NOT NULL,
@@ -84,22 +75,25 @@ class Database:
             usuario_id INTEGER NOT NULL,
             motivo     TEXT,
             fecha      TEXT    NOT NULL)""")
-        await self._exec("""CREATE TABLE IF NOT EXISTS config (
+        await self._sql("""CREATE TABLE IF NOT EXISTS config (
             clave TEXT PRIMARY KEY,
             valor TEXT)""")
 
     async def add_item(self, nombre, categoria, cantidad):
-        rows = await self._fetch("SELECT cantidad FROM inventario WHERE nombre = ?", [nombre])
+        e = self._escape
+        rows = await self._fetch(f"SELECT cantidad FROM inventario WHERE nombre = {e(nombre)}")
         if rows:
-            await self._exec("UPDATE inventario SET cantidad = cantidad + ? WHERE nombre = ?", [cantidad, nombre])
+            await self._sql(f"UPDATE inventario SET cantidad = cantidad + {e(cantidad)} WHERE nombre = {e(nombre)}")
         else:
-            await self._exec("INSERT INTO inventario (nombre, categoria, cantidad) VALUES (?, ?, ?)", [nombre, categoria, cantidad])
+            await self._sql(f"INSERT INTO inventario (nombre, categoria, cantidad) VALUES ({e(nombre)}, {e(categoria)}, {e(cantidad)})")
 
     async def remove_item(self, nombre, cantidad):
-        await self._exec("UPDATE inventario SET cantidad = MAX(0, cantidad - ?) WHERE nombre = ?", [cantidad, nombre])
+        e = self._escape
+        await self._sql(f"UPDATE inventario SET cantidad = MAX(0, cantidad - {e(cantidad)}) WHERE nombre = {e(nombre)}")
 
     async def get_item(self, nombre):
-        rows = await self._fetch("SELECT nombre, categoria, cantidad FROM inventario WHERE nombre = ?", [nombre])
+        e = self._escape
+        rows = await self._fetch(f"SELECT nombre, categoria, cantidad FROM inventario WHERE nombre = {e(nombre)}")
         return rows[0] if rows else None
 
     async def get_inventario_completo(self):
@@ -109,21 +103,23 @@ class Database:
         return await self._fetch("SELECT nombre, categoria, cantidad FROM inventario WHERE cantidad > 0 ORDER BY categoria, nombre")
 
     async def log_movimiento(self, tipo, item, categoria, cantidad, usuario, usuario_id, motivo):
+        e = self._escape
         fecha = datetime.utcnow().isoformat()
-        await self._exec(
-            "INSERT INTO movimientos (tipo, item, categoria, cantidad, usuario, usuario_id, motivo, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [tipo, item, categoria, cantidad, usuario, usuario_id, motivo, fecha]
+        await self._sql(
+            f"INSERT INTO movimientos (tipo, item, categoria, cantidad, usuario, usuario_id, motivo, fecha) "
+            f"VALUES ({e(tipo)}, {e(item)}, {e(categoria)}, {e(cantidad)}, {e(usuario)}, {e(usuario_id)}, {e(motivo)}, {e(fecha)})"
         )
 
     async def get_historial(self, limit=10):
         return await self._fetch(
-            "SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT ?",
-            [limit]
+            f"SELECT tipo, item, categoria, cantidad, usuario, motivo, fecha FROM movimientos ORDER BY id DESC LIMIT {int(limit)}"
         )
 
     async def get_config(self, clave):
-        rows = await self._fetch("SELECT valor FROM config WHERE clave = ?", [clave])
+        e = self._escape
+        rows = await self._fetch(f"SELECT valor FROM config WHERE clave = {e(clave)}")
         return rows[0]["valor"] if rows else None
 
     async def set_config(self, clave, valor):
-        await self._exec("INSERT OR REPLACE INTO config (clave, valor) VALUES (?, ?)", [clave, valor])
+        e = self._escape
+        await self._sql(f"INSERT OR REPLACE INTO config (clave, valor) VALUES ({e(clave)}, {e(valor)})")
