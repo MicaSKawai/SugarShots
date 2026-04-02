@@ -73,7 +73,6 @@ def separador():
 # ── Log permanente en #logs ───────────────────────────────────────────────────
 async def enviar_log(tipo: str, item: str, cant: int, usuario: discord.Member,
                      motivo: str = None, notas: str = None) -> discord.Message:
-    """Manda log permanente al canal #logs y devuelve el mensaje para obtener el jump_url."""
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return None
@@ -86,10 +85,10 @@ async def enviar_log(tipo: str, item: str, cant: int, usuario: discord.Member,
     accion = f"**+{cant}**" if tipo == "ingreso" else f"**-{cant}**"
 
     embed = discord.Embed(title=titulo, color=color)
-    embed.add_field(name="▸ Responsable", value=usuario.mention,                       inline=False)
-    embed.add_field(name="▸ Ítem",        value=f"{emoji_de_item(item)} **{item}**",   inline=True)
-    embed.add_field(name="▸ Cantidad",    value=accion,                                inline=True)
-    embed.add_field(name="▸ Categoría",   value=categoria_de_item(item).capitalize(),  inline=True)
+    embed.add_field(name="▸ Responsable", value=usuario.mention,                     inline=False)
+    embed.add_field(name="▸ Ítem",        value=f"{emoji_de_item(item)} **{item}**", inline=True)
+    embed.add_field(name="▸ Cantidad",    value=accion,                              inline=True)
+    embed.add_field(name="▸ Categoría",   value=categoria_de_item(item).capitalize(), inline=True)
     if motivo and motivo != "—":
         embed.add_field(name="▸ Motivo", value=f"*{motivo}*", inline=False)
     if notas and notas != "—":
@@ -98,13 +97,11 @@ async def enviar_log(tipo: str, item: str, cant: int, usuario: discord.Member,
     embed.set_footer(text=f"ID: {usuario.id}  •  Sistema de Armería")
     embed.timestamp = datetime.now(timezone.utc)
 
-    log_msg = await ch.send(embed=embed)
-    return log_msg
+    return await ch.send(embed=embed)
 
 
-# ── Re-mandar panel al fondo del canal ───────────────────────────────────────
+# ── Re-flotar panel al fondo ──────────────────────────────────────────────────
 async def reflotar_panel(canal_id: int):
-    """Borra el panel guardado y lo re-manda al fondo del canal."""
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return
@@ -147,7 +144,6 @@ async def reflotar_panel(canal_id: int):
         embed.set_footer(text="Sistema de Armería  •  Panel de Egreso")
         view = PanelEgreso()
 
-    # Borrar el panel viejo
     saved_id = await db.get_config(config_key)
     if saved_id:
         try:
@@ -156,7 +152,6 @@ async def reflotar_panel(canal_id: int):
         except discord.NotFound:
             pass
 
-    # Mandar el panel nuevo al fondo
     new_msg = await ch.send(embed=embed, view=view)
     await db.set_config(config_key, str(new_msg.id))
 
@@ -189,31 +184,25 @@ class ModalIngreso(discord.ui.Modal):
             print(f"❌ Error en ingreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
 
-        # Mandar log permanente primero para tener el jump_url
         log_msg = await enviar_log(
             "ingreso", self.item, cant, interaction.user,
             notas=self.notas.value or None
         )
 
-        # Confirmación pública con link directo al log
+        # Confirmación pública — simple
+        logs_ch = bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS)
+        link = f"[🔗 Ver en #{logs_ch.name}]({log_msg.jump_url})" if log_msg else ""
         embed = discord.Embed(
-            title="📥  INGRESO REGISTRADO",
-            description=separador(),
+            description=(
+                f"📥  {interaction.user.mention} ingresó "
+                f"**{cant}x {emoji_de_item(self.item)} {self.item}**\n"
+                f"{link}"
+            ),
             color=0x2ECC71
         )
-        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
-        embed.add_field(name="▸ Cantidad", value=f"**+{cant}**",                                inline=True)
-        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
-        if self.notas.value:
-            embed.add_field(name="▸ Notas", value=f"*{self.notas.value}*", inline=False)
-        if log_msg:
-            embed.add_field(name="▸ Log completo", value=f"[🔗 Ver en #{bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS).name}]({log_msg.jump_url})", inline=False)
-        embed.set_thumbnail(url=BANNER_ACCION)
-        embed.set_footer(text="Sistema de Armería")
         embed.timestamp = datetime.now(timezone.utc)
         await interaction.response.send_message(embed=embed)
 
-        # Re-flotar el panel al fondo
         asyncio.create_task(reflotar_panel(CHANNEL_INGRESO))
 
 
@@ -249,30 +238,25 @@ class ModalEgreso(discord.ui.Modal):
             print(f"❌ Error en egreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
 
-        # Mandar log permanente primero para tener el jump_url
         log_msg = await enviar_log(
             "egreso", self.item, cant, interaction.user,
             motivo=self.motivo.value
         )
 
-        # Confirmación pública con link directo al log
+        # Confirmación pública — simple
+        logs_ch = bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS)
+        link = f"[🔗 Ver en #{logs_ch.name}]({log_msg.jump_url})" if log_msg else ""
         embed = discord.Embed(
-            title="📤  EGRESO REGISTRADO",
-            description=separador(),
+            description=(
+                f"📤  {interaction.user.mention} retiró "
+                f"**{cant}x {emoji_de_item(self.item)} {self.item}**\n"
+                f"{link}"
+            ),
             color=0xE74C3C
         )
-        embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
-        embed.add_field(name="▸ Cantidad", value=f"**-{cant}**",                                inline=True)
-        embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
-        embed.add_field(name="▸ Motivo",   value=f"*{self.motivo.value}*",                      inline=False)
-        if log_msg:
-            embed.add_field(name="▸ Log completo", value=f"[🔗 Ver en #{bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS).name}]({log_msg.jump_url})", inline=False)
-        embed.set_thumbnail(url=BANNER_ACCION)
-        embed.set_footer(text="Sistema de Armería")
         embed.timestamp = datetime.now(timezone.utc)
         await interaction.response.send_message(embed=embed)
 
-        # Re-flotar el panel al fondo
         asyncio.create_task(reflotar_panel(CHANNEL_EGRESO))
 
 
