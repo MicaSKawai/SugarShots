@@ -21,6 +21,7 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 CHANNEL_INGRESO = 1488351094211088515
 CHANNEL_EGRESO  = 1488351273597141012
 CHANNEL_ARMERIA = 1488350783471882330
+CHANNEL_LOGS    = 1489143935115984976
 
 ALLOWED_ROLES = ["Armero", "Admin", "armero", "admin"]
 
@@ -65,17 +66,100 @@ def categoria_de_item(nombre):
 def emoji_de_item(nombre):
     return CATEGORIAS[categoria_de_item(nombre)][0]
 
-async def send_temp(interaction, embed, seconds=10):
-    await interaction.response.send_message(embed=embed)
-    msg = await interaction.original_response()
-    await asyncio.sleep(seconds)
-    try:
-        await msg.delete()
-    except:
-        pass
-
 def separador():
     return "══════════════════════════════"
+
+
+# ── Log permanente en #logs ───────────────────────────────────────────────────
+async def enviar_log(tipo: str, item: str, cant: int, usuario: discord.Member,
+                     motivo: str = None, notas: str = None) -> discord.Message:
+    """Manda log permanente al canal #logs y devuelve el mensaje para obtener el jump_url."""
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return None
+    ch = guild.get_channel(CHANNEL_LOGS)
+    if not ch:
+        return None
+
+    color  = 0x2ECC71 if tipo == "ingreso" else 0xE74C3C
+    titulo = "📥  INGRESO — ARMERÍA" if tipo == "ingreso" else "📤  EGRESO — ARMERÍA"
+    accion = f"**+{cant}**" if tipo == "ingreso" else f"**-{cant}**"
+
+    embed = discord.Embed(title=titulo, color=color)
+    embed.add_field(name="▸ Responsable", value=usuario.mention,                       inline=False)
+    embed.add_field(name="▸ Ítem",        value=f"{emoji_de_item(item)} **{item}**",   inline=True)
+    embed.add_field(name="▸ Cantidad",    value=accion,                                inline=True)
+    embed.add_field(name="▸ Categoría",   value=categoria_de_item(item).capitalize(),  inline=True)
+    if motivo and motivo != "—":
+        embed.add_field(name="▸ Motivo", value=f"*{motivo}*", inline=False)
+    if notas and notas != "—":
+        embed.add_field(name="▸ Notas",  value=f"*{notas}*",  inline=False)
+    embed.set_thumbnail(url=usuario.display_avatar.url)
+    embed.set_footer(text=f"ID: {usuario.id}  •  Sistema de Armería")
+    embed.timestamp = datetime.now(timezone.utc)
+
+    log_msg = await ch.send(embed=embed)
+    return log_msg
+
+
+# ── Re-mandar panel al fondo del canal ───────────────────────────────────────
+async def reflotar_panel(canal_id: int):
+    """Borra el panel guardado y lo re-manda al fondo del canal."""
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return
+    ch = guild.get_channel(canal_id)
+    if not ch:
+        return
+
+    if canal_id == CHANNEL_INGRESO:
+        config_key = "panel_ingreso_id"
+        embed = discord.Embed(
+            title="📥  PANEL DE INGRESO",
+            description=(
+                f"{separador()}\n"
+                "Registrá nuevos ítems al inventario de la armería.\n\n"
+                "🔫  **Registrar Arma** — Pistolas, SMGs y escopetas\n"
+                "🔄  **Registrar Cargador** — Todo tipo de cargadores\n"
+                "⚙️  **Registrar Mejora** — Accesorios y modificaciones\n\n"
+                f"*Solo personal con rol **Armero** o **Admin**.*\n"
+                f"{separador()}"
+            ),
+            color=0x2ECC71
+        )
+        embed.set_image(url=BANNER_ACCION)
+        embed.set_footer(text="Sistema de Armería  •  Panel de Ingreso")
+        view = PanelIngreso()
+    else:
+        config_key = "panel_egreso_id"
+        embed = discord.Embed(
+            title="📤  PANEL DE EGRESO",
+            description=(
+                f"{separador()}\n"
+                "Retirá ítems del inventario de la armería.\n\n"
+                "📤  **Retirar Ítem** — Elegí ítem, cantidad y motivo.\n\n"
+                f"⚠️  *Todos los egresos se registran con usuario y motivo obligatorio.*\n"
+                f"{separador()}"
+            ),
+            color=0xE74C3C
+        )
+        embed.set_image(url=BANNER_ACCION)
+        embed.set_footer(text="Sistema de Armería  •  Panel de Egreso")
+        view = PanelEgreso()
+
+    # Borrar el panel viejo
+    saved_id = await db.get_config(config_key)
+    if saved_id:
+        try:
+            old_msg = await ch.fetch_message(int(saved_id))
+            await old_msg.delete()
+        except discord.NotFound:
+            pass
+
+    # Mandar el panel nuevo al fondo
+    new_msg = await ch.send(embed=embed, view=view)
+    await db.set_config(config_key, str(new_msg.id))
+
 
 # ── Modales ───────────────────────────────────────────────────────────────────
 class ModalIngreso(discord.ui.Modal):
@@ -105,9 +189,16 @@ class ModalIngreso(discord.ui.Modal):
             print(f"❌ Error en ingreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
 
+        # Mandar log permanente primero para tener el jump_url
+        log_msg = await enviar_log(
+            "ingreso", self.item, cant, interaction.user,
+            notas=self.notas.value or None
+        )
+
+        # Confirmación pública con link directo al log
         embed = discord.Embed(
             title="📥  INGRESO REGISTRADO",
-            description=f"{separador()}",
+            description=separador(),
             color=0x2ECC71
         )
         embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
@@ -115,10 +206,15 @@ class ModalIngreso(discord.ui.Modal):
         embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
         if self.notas.value:
             embed.add_field(name="▸ Notas", value=f"*{self.notas.value}*", inline=False)
-        embed.set_image(url=BANNER_ACCION)
-        embed.set_footer(text="Sistema de Armería  •  Este mensaje se borrará en 10s")
+        if log_msg:
+            embed.add_field(name="▸ Log completo", value=f"[🔗 Ver en #{bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS).name}]({log_msg.jump_url})", inline=False)
+        embed.set_thumbnail(url=BANNER_ACCION)
+        embed.set_footer(text="Sistema de Armería")
         embed.timestamp = datetime.now(timezone.utc)
-        await send_temp(interaction, embed)
+        await interaction.response.send_message(embed=embed)
+
+        # Re-flotar el panel al fondo
+        asyncio.create_task(reflotar_panel(CHANNEL_INGRESO))
 
 
 class ModalEgreso(discord.ui.Modal):
@@ -153,19 +249,31 @@ class ModalEgreso(discord.ui.Modal):
             print(f"❌ Error en egreso DB: {e}", flush=True)
             return await interaction.response.send_message("❌ Error al guardar en la base de datos.", ephemeral=True)
 
+        # Mandar log permanente primero para tener el jump_url
+        log_msg = await enviar_log(
+            "egreso", self.item, cant, interaction.user,
+            motivo=self.motivo.value
+        )
+
+        # Confirmación pública con link directo al log
         embed = discord.Embed(
             title="📤  EGRESO REGISTRADO",
-            description=f"{separador()}",
+            description=separador(),
             color=0xE74C3C
         )
         embed.add_field(name="▸ Ítem",     value=f"{emoji_de_item(self.item)} **{self.item}**", inline=True)
         embed.add_field(name="▸ Cantidad", value=f"**-{cant}**",                                inline=True)
         embed.add_field(name="▸ Armero",   value=interaction.user.mention,                      inline=True)
         embed.add_field(name="▸ Motivo",   value=f"*{self.motivo.value}*",                      inline=False)
-        embed.set_image(url=BANNER_ACCION)
-        embed.set_footer(text="Sistema de Armería  •  Este mensaje se borrará en 10s")
+        if log_msg:
+            embed.add_field(name="▸ Log completo", value=f"[🔗 Ver en #{bot.get_guild(GUILD_ID).get_channel(CHANNEL_LOGS).name}]({log_msg.jump_url})", inline=False)
+        embed.set_thumbnail(url=BANNER_ACCION)
+        embed.set_footer(text="Sistema de Armería")
         embed.timestamp = datetime.now(timezone.utc)
-        await send_temp(interaction, embed)
+        await interaction.response.send_message(embed=embed)
+
+        # Re-flotar el panel al fondo
+        asyncio.create_task(reflotar_panel(CHANNEL_EGRESO))
 
 
 # ── Selects ───────────────────────────────────────────────────────────────────
@@ -303,7 +411,8 @@ def build_embed(inventario, movs):
             s = "+" if m["tipo"] == "ingreso" else "-"
             ts = m["fecha"][:16].replace("T", " ")
             lines.append(
-                f"{e}  `{ts}`  **{m['usuario'].split('#')[0]}**  —  {emoji_de_item(m['item'])} {m['item']}  `{s}{m['cantidad']}`"
+                f"{e}  `{ts}`  **{m['usuario'].split('#')[0]}**  —  "
+                f"{emoji_de_item(m['item'])} {m['item']}  `{s}{m['cantidad']}`"
             )
         embed.add_field(name="📋  ÚLTIMOS MOVIMIENTOS", value="\n".join(lines), inline=False)
 
@@ -382,7 +491,7 @@ async def cmd_stock(interaction, item: str):
         return await interaction.response.send_message(f"❌ **{item}** no encontrado.", ephemeral=True)
 
     n = int(row["cantidad"] or 0)
-    color = 0xE74C3C if n <= 3 else 0x2ECC71
+    color  = 0xE74C3C if n <= 3 else 0x2ECC71
     estado = "⚠️  Stock bajo" if n <= 3 else "✅  En stock"
 
     embed = discord.Embed(
