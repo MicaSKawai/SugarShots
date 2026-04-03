@@ -11,7 +11,7 @@ import os
 import asyncio
 from datetime import datetime, timezone
 from database import Database
-from traficos import iniciar_traficos
+from traficos import iniciar_traficos, test_aviso
 
 from keep_alive import keep_alive
 keep_alive()
@@ -418,9 +418,9 @@ class DashboardView(discord.ui.View):
 
 def fmt_stock(n):
     n = int(n or 0)
-    if n == 0:       return "**` 0 `**"
-    if n <= 3:       return f"**`{n:>2}`** ⚠️"
-    return                  f"**`{n:>2}`**"
+    if n == 0:   return "**` 0 `**"
+    if n <= 3:   return f"**`{n:>2}`** ⚠️"
+    return              f"**`{n:>2}`**"
 
 def build_embed(inventario, movs, almacen_nombre):
     embed = discord.Embed(
@@ -537,6 +537,19 @@ async def cmd_reset(interaction):
     await interaction.response.defer(ephemeral=True)
     await setup_panels(interaction.guild, force=True)
     await interaction.followup.send("✅ Paneles reseteados.", ephemeral=True)
+
+
+@bot.tree.command(name="testaviso", description="[ADMIN] Testea los avisos de tráficos")
+@app_commands.describe(actividad="Nombre de la actividad: Barriles, Aereo o Mision (opcional, sin filtro manda las 3)")
+async def cmd_test_aviso(interaction, actividad: str = None):
+    if not any(r.name in ["Admin", "admin"] for r in interaction.user.roles):
+        return await interaction.response.send_message("❌ Solo admins.", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    ok = await test_aviso(bot, actividad)
+    if ok:
+        await interaction.followup.send("✅ Avisos de prueba enviados al canal de tráficos.", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ No se encontró la actividad especificada.", ephemeral=True)
 
 
 async def setup_panels(guild, force=False):
