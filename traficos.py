@@ -30,6 +30,9 @@ ACTIVIDADES = [
 
 avisos_enviados: set = set()
 
+# ── Referencia global al loop para que el GC no lo mate ──────────────────────
+_loop_traficos = None
+
 
 def get_key(actividad, dia_año, anticipacion):
     h, m = actividad["inicio"]
@@ -50,9 +53,9 @@ async def mandar_aviso(ch, mencion, act, anticipacion, ahora_hub):
         urgencia = "🔴  ¡Última llamada! Faltan **10 minutos**."
 
     embed = discord.Embed(title=titulo, color=color)
-    embed.add_field(name="▸ Actividad",   value=f"**{act['nombre']}**",                        inline=True)
+    embed.add_field(name="▸ Actividad",   value=f"**{act['nombre']}**",                                            inline=True)
     embed.add_field(name="▸ Horario HUB", value=f"**{h_inicio:02d}:{m_inicio:02d}** → **{h_fin:02d}:{m_fin:02d}**", inline=True)
-    embed.add_field(name="▸ Estado",      value=urgencia,                                       inline=False)
+    embed.add_field(name="▸ Estado",      value=urgencia,                                                           inline=False)
     embed.set_image(url=act["imagen"])
     embed.set_footer(text=f"Hora HUB actual: {ahora_hub.strftime('%H:%M')}  •  Sistema de Armería")
     embed.timestamp = ahora_hub
@@ -62,8 +65,8 @@ async def mandar_aviso(ch, mencion, act, anticipacion, ahora_hub):
 
 
 async def verificar_avisos(bot):
-    ahora_hub  = datetime.now(HUB_TZ)
-    dia_semana = ahora_hub.weekday()
+    ahora_hub   = datetime.now(HUB_TZ)
+    dia_semana  = ahora_hub.weekday()
     hora_actual = ahora_hub.hour
     min_actual  = ahora_hub.minute
     dia_año     = ahora_hub.timetuple().tm_yday
@@ -72,7 +75,7 @@ async def verificar_avisos(bot):
     if not guild: return
     ch = guild.get_channel(CHANNEL_TRAFICOS)
     if not ch: return
-    rol = guild.get_role(ROL_ARMERO_ID)
+    rol     = guild.get_role(ROL_ARMERO_ID)
     mencion = rol.mention if rol else "@Armero"
 
     for act in ACTIVIDADES:
@@ -101,24 +104,21 @@ async def test_aviso(bot, nombre_actividad: str = None):
     if not guild: return False
     ch = guild.get_channel(CHANNEL_TRAFICOS)
     if not ch: return False
-    rol = guild.get_role(ROL_ARMERO_ID)
+    rol     = guild.get_role(ROL_ARMERO_ID)
     mencion = rol.mention if rol else "@Armero"
 
-    # Buscar actividades únicas por nombre
-    nombres_vistos = set()
+    nombres_vistos    = set()
     actividades_unicas = []
     for act in ACTIVIDADES:
         if act["nombre"] not in nombres_vistos:
             nombres_vistos.add(act["nombre"])
             actividades_unicas.append(act)
 
-    # Filtrar si se especifica una
     if nombre_actividad:
         actividades_unicas = [a for a in actividades_unicas if nombre_actividad.lower() in a["nombre"].lower()]
         if not actividades_unicas:
             return False
 
-    # Mandar aviso de 30min y 10min de cada actividad
     for act in actividades_unicas:
         await mandar_aviso(ch, mencion, act, 30, ahora_hub)
         await mandar_aviso(ch, mencion, act, 10, ahora_hub)
@@ -127,6 +127,9 @@ async def test_aviso(bot, nombre_actividad: str = None):
 
 
 def iniciar_traficos(bot):
+    global _loop_traficos
+
+    # Crear el loop con referencia global — así el GC nunca lo mata
     @tasks.loop(minutes=1)
     async def loop_traficos():
         try:
@@ -134,5 +137,10 @@ def iniciar_traficos(bot):
         except Exception as e:
             print(f"⚠️ Error en traficos: {e}", flush=True)
 
-    loop_traficos.start()
+    @loop_traficos.before_loop
+    async def before_loop():
+        await bot.wait_until_ready()
+
+    _loop_traficos = loop_traficos  # guardar referencia global
+    _loop_traficos.start()
     print("✅ Sistema de tráficos iniciado", flush=True)
