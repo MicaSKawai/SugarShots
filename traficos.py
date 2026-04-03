@@ -10,7 +10,7 @@ import os
 CHANNEL_TRAFICOS = 1489507668207861941
 ROL_ARMERO_ID    = 1488351409433743450
 
-HUB_TZ = pytz.timezone("Europe/Madrid")
+HUB_TZ = pytz.utc  # HUB corre en UTC puro
 
 ACTIVIDADES = [
     # ── Barriles a la deriva ── Miercoles(2) y Sabado(5)
